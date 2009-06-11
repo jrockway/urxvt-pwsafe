@@ -1,7 +1,5 @@
 #! perl
 
-# this extension implements scrollback buffer search
-
 sub on_init {
     my ($self) = @_;
 
