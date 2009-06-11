@@ -30,11 +30,15 @@ sub enter {
         key_press => \&key_press,
     );
 
-    if ($self->{db}) {
-        $self->do_password;
-    } else {
-        $self->initdb( sub { $self->do_password } );
-    }
+    $self->do_password;
+}
+
+sub leave {
+   my ($self) = @_;
+   delete $self->{overlay};
+   delete $self->{prompt};
+   delete $self->{state};
+   $self->disable("key_press");
 }
 
 sub msg {
@@ -107,6 +111,9 @@ sub prompt_finish {
 
 sub initdb {
     my ($self, $after) = @_;
+
+    return $after->($self->{db_password}) if $self->{db_password};
+
     $self->prompt('Password database password: ', 1, sub {
         my $pass = shift;
         if($pass){
@@ -120,7 +127,8 @@ sub initdb {
                 return;
             }
             $self->timed_msg('Database unlocked');
-            $after->();
+            $self->{db_password} = $pass;
+            $after->($pass);
         }
         else {
             $self->timed_msg('Aborted.');
@@ -133,6 +141,7 @@ sub initdb {
 
 sub real_initdb {
     my ($self, $key) = @_;
+
     my @passwords = `echo $key | pwsafe --export 2> /dev/null`;
     chomp @passwords;
 
@@ -151,31 +160,28 @@ sub real_initdb {
 
 sub do_password {
     my ($self, $no_msg) = @_;
-    my $avail = 'available passwords: '. (join ',', keys %{$self->{db}});
-    $self->msg($avail) unless $no_msg;
 
-    $self->prompt('password to insert: ', 0, sub {
-        my $passname = shift;
-        my $password = $self->{db}{$passname};
+    $self->initdb(sub {
+        my $db_pass = shift;
+        $self->real_initdb($db_pass); # re-init database, yes this is now spaghetti code
 
-        if($password){
-            $self->tt_write($password. "\n");
-            $self->leave;
-        }
-        else {
-            $self->msg("Unknown password $passname: ($avail)");
-            $self->do_password('no_msg');
-        }
+        my $avail = 'available passwords: '. (join ',', keys %{$self->{db}});
+        $self->msg($avail) unless $no_msg;
+
+        $self->prompt('password to insert: ', 0, sub {
+            my $passname = shift;
+            my $password = $self->{db}{$passname};
+
+            if($password){
+                $self->tt_write($password. "\n");
+                $self->leave;
+            }
+            else {
+                $self->msg("Unknown password $passname: ($avail)");
+                $self->do_password('no_msg');
+            }
+        });
     });
-}
-
-sub leave {
-   my ($self) = @_;
-   delete $self->{overlay};
-   delete $self->{timed_overlay};
-   delete $self->{prompt};
-   delete $self->{state};
-   $self->disable("key_press");
 }
 
 sub key_press {
