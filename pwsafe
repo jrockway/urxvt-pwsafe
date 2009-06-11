@@ -1,0 +1,167 @@
+#! perl
+
+# this extension implements scrollback buffer search
+
+sub on_init {
+    my ($self) = @_;
+
+    my $hotkey = $self->{argv}[0]
+      || "M-p";
+
+    $self->parse_keysym ($hotkey, "perl:pwsafe:start")
+      or warn "unable to register '$hotkey' as pwsafe start hotkey\n";
+
+    return;
+}
+
+sub on_user_command {
+    my ($self, $cmd) = @_;
+
+    $self->enter if $cmd eq 'pwsafe:start';
+
+    return;
+}
+
+sub enter {
+    my ($self) = @_;
+
+    return if $self->displaying_msg || $self->displaying_prompt;
+
+    $self->enable(
+        key_press => \&key_press,
+    );
+
+    if ($self->{db}) {
+        $self->do_password;
+    } else {
+        $self->initdb( sub { $self->do_password } );
+    }
+}
+
+sub msg {
+    my ($self, $msg) = @_;
+    delete $self->{timed_overlay};
+    $self->{overlay} = $self->overlay (0, -2, $self->ncol, 1, urxvt::OVERLAY_RSTYLE, 0);
+    $self->{overlay}->set (0, 0, $self->special_encode ($msg));
+}
+
+sub timed_msg {                 # xxx improve this.
+    my ($self, $msg) = @_;
+    delete $self->{overlay};
+    $self->{timed_overlay} = $self->overlay (0, -2, $self->ncol, 1, urxvt::OVERLAY_RSTYLE, 0);
+    $self->{timed_overlay}->set (0, 0, $self->special_encode ($msg));
+}
+
+sub displaying_msg {
+    my ($self) = @_;
+    return defined $self->{overlay};
+}
+
+sub prompt {
+    my ($self, $msg, $next) = @_;
+    $self->{state} = 'prompt';
+    $self->{prompt_msg} = $msg;
+    $self->{prompt_next} = $next;
+    $self->{prompt_buffer} = '';
+    $self->{prompt} = $self->overlay(0, -1, $self->ncol, 1, urxvt::OVERLAY_RSTYLE, 0);
+    $self->prompt_redisplay;
+}
+
+sub prompt_redisplay {
+    my ($self) = @_;
+    my $msg = $self->{prompt_msg} . $self->{prompt_buffer};
+    $self->{prompt}->set(0, 0, $self->special_encode ($msg));
+}
+
+sub displaying_prompt {
+    my ($self) = @_;
+    return $self->{state} eq 'prompt';
+}
+
+sub prompt_handle {
+    my ($self, $string) = @_;
+    $self->{prompt_buffer} .= $string;
+    $self->prompt_redisplay;
+}
+
+sub prompt_delete {
+    my ($self) = @_;
+    substr $self->{prompt_buffer}, -1, 1, "";
+    $self->prompt_redisplay;
+}
+
+sub prompt_finish {
+    my ($self) = @_;
+    delete $self->{prompt};
+    delete $self->{state};
+    my $next = delete $self->{prompt_next};
+    my $buf  = delete $self->{prompt_buffer};
+    $next->($buf);
+    return;
+}
+
+sub initdb {
+    my ($self, $after) = @_;
+    $self->prompt('Password database password: ', sub {
+        my $pass = shift;
+        if($pass){
+            eval {
+                $self->real_initdb($pass);
+            };
+            if($@){
+                $self->msg("Error: $@");
+                $self->initdb(); # try again
+                return;
+            }
+            $after->();
+        }
+        else {
+            $self->timed_msg('Aborted.');
+            $self->leave;
+            return;
+        }
+
+    });
+}
+
+sub real_initdb {
+    my ($self, $key) = @_;
+    die "Not yet implemented.";
+}
+
+sub do_password {
+    die "Not implemented.";
+}
+
+sub leave {
+   my ($self) = @_;
+   delete $self->{overlay};
+   delete $self->{prompt};
+   delete $self->{state};
+   $self->disable("key_press");
+}
+
+sub key_press {
+   my ($self, $event, $keysym, $string) =  @_;
+
+   delete $self->{manpage_overlay};
+
+   if ($keysym == 0xff1b) { # escape
+       $self->timed_msg('Aborted.');
+       $self->leave;
+   }
+
+   if ($self->{state} eq 'prompt'){
+       if ($keysym == 0xff0d || $keysym == 0xff8d) { # enter
+           $self->prompt_finish;
+       }
+       elsif ($keysym == 0xff08) { # backspace
+           $self->prompt_delete;
+       }
+       else {
+           $self->prompt_handle($string);
+       }
+   }
+
+   return 1;
+}
