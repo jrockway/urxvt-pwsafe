@@ -44,7 +44,7 @@ sub msg {
     $self->{overlay}->set (0, 0, $self->special_encode ($msg));
 }
 
-sub timed_msg {                 # xxx improve this.
+sub timed_msg {
     my ($self, $msg) = @_;
     delete $self->{overlay};
     $self->{timed_overlay} = $self->overlay (0, -2, $self->ncol, 1, urxvt::OVERLAY_RSTYLE, 0);
