@@ -153,6 +153,7 @@ sub real_initdb {
 
     $self->{db} = {
         map { s/^"(.+)"$/$1/; $_ }
+        map { s/\\\\/\\/; $_ }
         map { my @p = split /\t/, $_; @p[2,4] }
         grep { $_ } @passwords # skip blank lines
     };
