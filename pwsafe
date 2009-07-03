@@ -190,7 +190,7 @@ sub key_press {
 
    delete $self->{manpage_overlay};
 
-   if ($keysym == 0xff1b) { # escape
+   if ($keysym == 0xff1b || $string =~ /\cc/) { # escape or ^C
        $self->timed_msg('Aborted.');
        $self->leave;
    }
